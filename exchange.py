@@ -15,17 +15,7 @@ with open(r'acc.json', 'r') as file:
     })
     okx.httpsProxy = 'http://127.0.0.1:7890/'
 
-    binance_test = ccxt.binance({
-        "apiKey": accounts['binance_test_api_key'],
-        "secret": accounts['binance_test_secret_key'],
-    })
-    binance_test.options = {'defaultType': 'future', 'adjustForTimeDifference': True, 'defaultTimeInForce': 'GTC'}
-    binance_test.set_sandbox_mode(True)
-    binance = ccxt.binance({
-        "apiKey": accounts['binance_api_key'],
-        "secret": accounts['binance_secret_key'],
-    })
-    binance_test.options = {'defaultType': 'future', 'adjustForTimeDifference': True, 'defaultTimeInForce': 'GTC'}
+
 
 
 def get_spot_order_okx_test(symbol, cl_order_id=None):
@@ -136,53 +126,6 @@ def close_order_okx_test(symbol, action):
     return order
 
 
-def close_order_binance_test(symbol, action):
-    binance_test.set_sandbox_mode(True)  # demo-trading
-    contract = symbol.upper() + "/USDT:USDT"
-    if action == 'long':
-        order = binance_test.create_order(contract, 'market', 'sell', 1,
-                                          params={'mgnMode': 'isolated', "posSide": "long", 'sz': 1})
-    elif action == 'short':
-        order = binance_test.create_order(contract, 'market', 'buy', 1,
-                                          params={'mgnMode': 'isolated', "posSide": "short", 'sz': 1})
-    return order
-
-
-# order = place_order('eth','long')
-# #{'info': {'clOrdId': 'e847386590ce4dBCfc5c5b9471ac78b5', 'ordId': '660417488194207801', 'sCode': '0', 'sMsg': 'Order placed', 'tag': 'e847386590ce4dBC'}, 'id': '660417488194207801', 'clientOrderId': 'e847386590ce4dBCfc5c5b9471ac78b5', 'timestamp': None, 'datetime': None, 'lastTradeTimestamp': None, 'lastUpdateTimestamp': None, 'symbol': 'ETH/USDT:USDT', 'type': 'market', 'timeInForce': None, 'postOnly': None, 'side': 'sell', 'price': None, 'stopLossPrice': None, 'takeProfitPrice': None, 'stopPrice': None, 'triggerPrice': None, 'average': None, 'cost': None, 'amount': None, 'filled': None, 'remaining': None, 'status': None, 'fee': None, 'trades': [], 'reduceOnly': False, 'fees': []}
-
-# print(order)
-# close_order('btc','short')
-
-def round_decimal_up(number, n):
-    # 将输入的数字转换为Decimal对象
-    decimal_number = Decimal(str(number))
-
-    # 构建一个Decimal对象，用于指定小数位数和舍入方式
-    rounding_factor = Decimal("1") / Decimal("10") ** n
-
-    # 使用ROUND_CEILING舍入方式进行舍入
-    rounded_number = (decimal_number / rounding_factor).quantize(Decimal("1"), rounding=ROUND_CEILING) * rounding_factor
-
-    return rounded_number
-
-
-def get_amount_from_usdt_bianance(symbol, usdt_amount):
-    price = (binance.fetch_ticker(symbol))['close']
-    market = exchange.market(symbol)
-    # print(market)
-    precision = market['precision']['amount']
-    amount = round_decimal_up(quote_amount / price, precision)
-    notional = market['info']['filters'][5]['notional']
-
-    # amount = float(f'%.{precision}g' % ())
-    # print(amount)
-    # print(float(notional) / price)
-    notional_amount = round_decimal_up(float(notional) / price, precision)
-    amount = max(notional_amount, amount)
-    return amount
-
-
 def get_spot_amount_from_usdt_okx(symbol, usdt_amount):
     okx.set_sandbox_mode(True)
     contract = symbol.upper() + "/USDT"
@@ -271,18 +214,6 @@ def get_today_realized_profit_okx(symbol):
 # print(get_amount_from_usdt_okx('btc', 500))
 # place_order_okx_test('inj','short')
 # close_order_okx_test('btc','short')
-def place_order_binance_test(symbol, action):
-    # binance_test.set_sandbox_mode(True)  # demo-trading
-    if action in ['buy', 'long']:
-        side = 'buy'
-    elif action in ['sell', 'short']:
-        side = 'sell'
-
-    amount = get_amount_from_usdt_bianance(symbol, 500)
-
-    order = client.new_order(symbol=symbol, side=action, type=type, quantity=amount, close_postion=True)
-    # print(order)
-    return order
 
 
 # place_order_binance_test('BTCUSDT','long')

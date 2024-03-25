@@ -31,7 +31,7 @@ file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 # config_logging(logging, logging.DEBUG)
 Base = sqlalchemy.orm.declarative_base()
-path = 'D:\\PycharmProjects\\automake\\mexc\\crypto.db'
+path = 'crypto.db'
 # 创建数据库引擎和会话
 engine = create_engine(f'sqlite:///{path}', echo=False, pool_size=10)
 quota_amount = 12
@@ -347,7 +347,7 @@ def process_kline(data):
                                     spot_grid_1.realized_profit = 0
                                     spot_grid_1.buy_fee = 0
                                     spot_grid_1.sell_fee = 0
-                                    spot_grid1.buy_order_id = symbol[:-5] + data['data'][0]['ts']
+                                    spot_grid_1.buy_order_id = symbol[:-5] + data['data'][0]['ts']
                                     session.add(spot_grid_1)
                                     spot_record = session.query(Spot).filter_by(symbol=symbol, buy_state=1,
                                                                                 sell_state=None).first()
