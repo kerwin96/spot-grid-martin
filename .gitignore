@@ -1,2 +1,4 @@
 /*.db
 /*.log
+/acc.json
+/venv/

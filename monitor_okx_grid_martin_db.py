@@ -1,4 +1,3 @@
-
 # !/usr/bin/env python
 from sqlalchemy import create_engine, Column, String, Integer, Float, DateTime, Boolean, text, func
 from sqlalchemy.orm import sessionmaker
@@ -11,6 +10,7 @@ from websockets.exceptions import ConnectionClosedError
 import websockets
 import logging
 import asyncio
+from logging.handlers import TimedRotatingFileHandler
 
 # 设置 SQLAlchemy 的日志级别为 ERROR
 logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
@@ -20,15 +20,16 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 创建文件处理程序并设置级别为 INFO
-file_handler = logging.FileHandler('spot-grid-martin.log', encoding='utf-8')
-file_handler.setLevel(logging.INFO)
-
+file_handler = TimedRotatingFileHandler('spot-grid-martin.log', when='midnight', interval=1, backupCount=1,
+                                        encoding='utf-8')
+console_handler = logging.StreamHandler()
 # 创建格式化器
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
-
+console_handler.setFormatter(formatter)
 # 将文件处理程序添加到日志记录器
 logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 # config_logging(logging, logging.DEBUG)
 Base = sqlalchemy.orm.declarative_base()
 path = 'crypto.db'
@@ -82,15 +83,13 @@ def get_session():
     return session()
 
 
-
-
-
 def process_kline(data):
     event_time = datetime.fromtimestamp(int(data['data'][0]['ts']) / 1000.0)
     symbol = data['arg']["instId"]
     mark_price = float(data['data'][0]['last'])
     logger.info(f'{symbol} mark price:{mark_price}')
     with get_session() as session:
+
         record = session.query(SpotGrid).filter_by(symbol=symbol, sell_price=None).order_by(
             SpotGrid.buy_time.desc()).first()
         if not record:
@@ -107,7 +106,7 @@ def process_kline(data):
             order = place_spot_order_okx_test(symbol[:-5], 'long', mark_price, base_amount=quota_amount / mark_price,
                                               cl_order_id=spot_grid.buy_order_id)
             logger.info(order)
-            if order['info']['sCode'] != '0':
+            if not order or order['info']['sCode'] != '0':
                 return
             session.add(spot_grid)
             session.commit()
@@ -161,20 +160,24 @@ def process_kline(data):
                     spot_record.all_realized_profit = all_realized_profit
                     spot_record.all_sell_fee = all_sell_fee
                 else:
-                    # 是否超时，如果超时，撤销执行
-                    time_difference = (datetime.now() - record.buy_time).total_seconds()
-                    if time_difference > 30:
-                        # 撤销限价单，删除订单
-                        try:
-                            cancel_spot_order_okx_test(symbol[:-5], record.sell_order_id)
-                            record.sell_state = None
-                            logger.info(
-                                f'卖出订单超时未成交,取消订单-symbol:{record.symbol}-order_id:{record.sell_order_id}', )
-
-                        except OrderNotFound:
-                            pass
+                    if state == 'partially_filled':
+                        pass
                     else:
-                        logger.info(f"卖出订单尚未成交,重新查询-symbol:{record.symbol}-order_id:{record.sell_order_id}")
+                        # 是否超时，如果超时，撤销执行
+                        time_difference = (datetime.now() - record.buy_time).total_seconds()
+                        if time_difference > 30:
+                            # 撤销限价单，删除订单
+                            try:
+                                cancel_spot_order_okx_test(symbol[:-5], record.sell_order_id)
+                                record.sell_state = None
+                                logger.info(
+                                    f'卖出订单超时未成交,取消订单-symbol:{record.symbol}-order_id:{record.sell_order_id}', )
+
+                            except OrderNotFound:
+                                pass
+                        else:
+                            logger.info(
+                                f"卖出订单尚未成交,重新查询-symbol:{record.symbol}-order_id:{record.sell_order_id}")
                 session.commit()
                 session.close()
                 return
@@ -217,26 +220,26 @@ def process_kline(data):
                     spot_record.all_buy_fee = all_buy_fee
 
                 else:
-                    # 是否超时，如果超时，撤销执行
-                    time_difference = (datetime.now() - record.buy_time).total_seconds()
-                    if time_difference > 30:
-                        # 撤销限价单，删除订单
-                        try:
-                            cancel_spot_order_okx_test(symbol[:-5], record.buy_order_id)
-                            logger.info(
-                                f"买入订单超时未成交,取消订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
-                            session.delete(record)
-                        except OrderNotFound:
-                            pass
-
-                        session.commit()
-                        session.close()
-                        return
+                    if state == 'partially_filled':
+                        pass
                     else:
-                        logger.info(f"买入订单尚未成交,重新查询-symbol:{record.symbol}-order_id:{record.buy_order_id}")
-                        session.commit()
-                        session.close()
-                        return
+                        # 是否超时，如果超时，撤销执行
+                        time_difference = (datetime.now() - record.buy_time).total_seconds()
+                        if time_difference > 30:
+                            # 撤销限价单，删除订单
+                            try:
+                                cancel_spot_order_okx_test(symbol[:-5], record.buy_order_id)
+                                logger.info(
+                                    f"买入订单超时未成交,取消订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
+                                session.delete(record)
+                            except OrderNotFound:
+                                pass
+                        else:
+                            logger.info(
+                                f"买入订单尚未成交,重新查询-symbol:{record.symbol}-order_id:{record.buy_order_id}")
+                session.commit()
+                session.close()
+                return
 
             elif record.buy_state == 1:
                 if record.num < 49:
@@ -258,7 +261,7 @@ def process_kline(data):
                                                                       base_amount=quota_amount / mark_price,
                                                                       cl_order_id=spot_grid.buy_order_id)
                                     logger.info(order)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
                                     session.add(spot_grid)
                         else:
@@ -275,7 +278,7 @@ def process_kline(data):
                                                                       base_amount=record.position_amount,
                                                                       cl_order_id=record.sell_order_id)
                                     logger.info(order)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
                                     record.sell_state = 0
                                     record.sell_time = event_time
@@ -296,7 +299,7 @@ def process_kline(data):
                                     spot_grid_1.realized_profit = 0
                                     spot_grid_1.buy_fee = 0
                                     spot_grid_1.sell_fee = 0
-                                    spot_grid1.buy_order_id = symbol[:-5] + data['data'][0]['ts']
+                                    spot_grid_1.buy_order_id = symbol[:-5] + data['data'][0]['ts']
                                     session.add(spot_grid_1)
                                     spot_record = session.query(Spot).filter_by(symbol=symbol, buy_state=1,
                                                                                 sell_state=None).first()
@@ -304,7 +307,7 @@ def process_kline(data):
                                                                       base_amount=spot_record.all_buy_amount,
                                                                       cl_order_id=spot_grid.buy_order_id)
                                     logger.info(order)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
                                         f":thumbs_up: 新买入订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
@@ -324,7 +327,7 @@ def process_kline(data):
                                                                       base_amount=record.buy_amount,
                                                                       cl_order_id=record.sell_order_id)
                                     logger.info(order)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
                                         f":thumbs_up: 卖出订单尚已成交-symbol:{record.symbol}-order_id:{record.sell_order_id}")
@@ -355,7 +358,7 @@ def process_kline(data):
                                                                       base_amount=spot_record.all_buy_amount,
                                                                       cl_order_id=spot_grid.buy_order_id)
                                     logger.info(order)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
                                         f":thumbs_up: 新买入订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
@@ -377,7 +380,7 @@ def process_kline(data):
                                                                       base_amount=record.buy_amount,
                                                                       cl_order_id=record.sell_order_id)
                                     logger.info(order)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
 
                                     logger.info(
@@ -409,7 +412,7 @@ def process_kline(data):
                                                                       base_amount=spot_record.all_buy_amount,
                                                                       cl_order_id=spot_grid.buy_order_id)
                                     logger.info(order)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
                                         f":thumbs_up: 新买入订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
@@ -430,7 +433,7 @@ def process_kline(data):
                                     order = place_spot_order_okx_test(symbol[:-5], 'short', mark_price,
                                                                       base_amount=record.buy_amount,
                                                                       cl_order_id=record.sell_order_id)
-                                    if order['info']['sCode'] != '0':
+                                    if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
                                         f":thumbs_up: 新买入订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
@@ -450,7 +453,7 @@ def process_kline(data):
                                                                   base_amount=record.buy_amount,
                                                                   cl_order_id=record.sell_order_id)
                                 logger.info(order)
-                                if order['info']['sCode'] != '0':
+                                if not order or order['info']['sCode'] != '0':
                                     return
                                 logger.info(
                                     f":thumbs_up: 卖出订单尚已成交-symbol:{record.symbol}-order_id:{record.sell_order_id}")
@@ -467,7 +470,7 @@ async def main():
     max_retries = 3
     retries = 0
     connected = False
-    while not connected and retries < max_retries:
+    while not connected:
         try:
             url = "wss://wspap.okx.com:8443/ws/v5/public?brokerId=9999"
             async with websockets.connect(url, ping_interval=20, ping_timeout=60) as ws:
@@ -481,7 +484,7 @@ async def main():
                         dict(channel='tickers', instId="MATIC-USDT"),
                         dict(channel='tickers', instId="SOL-USDT"),
                         dict(channel='tickers', instId="SUI-USDT"),
-                        dict(channel='tickers', instId="ATOM-USDT"),
+                        # dict(channel='tickers', instId="ATOM-USDT"),
                         dict(channel='tickers', instId="LINK-USDT"),
                         dict(channel='tickers', instId="SHIB-USDT"),
                     ]
@@ -495,12 +498,11 @@ async def main():
                 connected = True  # 连接成功后设置为 True
         except ConnectionClosedError:
             logger.error("Connection closed unexpectedly. Reconnecting...")
-            await asyncio.sleep(5)  # 5秒后重新连接
-            await main()  # 重新调用主函数
-        except asyncio.exceptions.TimeoutError:
-            retries += 1
-            logger.error(f"Connection attempt {retries} timed out. Retrying...")
-            await asyncio.sleep(5)  # 等待5秒后重试连接
+            await asyncio.sleep(3)
+            await main()
+        except Exception as e:
+            logger.error(e, exc_info=True)
+
 
 
 if __name__ == '__main__':

@@ -24,7 +24,7 @@ def get_spot_order_okx_test(symbol, cl_order_id=None):
         contract = symbol.upper() + "/USDT"
 
         order = okx.fetch_order(id=None,symbol=contract,params={'clOrdId':cl_order_id})
-        # print(order)
+        print(order)
         return order
 
     except Exception as e:
@@ -218,5 +218,5 @@ def get_today_realized_profit_okx(symbol):
 
 # place_order_binance_test('BTCUSDT','long')
 
-# print(place_spot_order_okx_test('ATOM', 'long', 11.11, base_amount=1))
-# get_spot_order_okx_test('sui','SUI1711020521203')
+# print(place_spot_order_okx_test('BTC', 'short', 71000,quota_amount=0.0001689))
+get_spot_order_okx_test('SHIB','SHIB1711497921182')
