@@ -11,8 +11,11 @@ import websockets
 import logging
 import asyncio
 from logging.handlers import TimedRotatingFileHandler
+#todo 订单部分成交1h其余还未成交
+#todo btc订单buy amount数量不对
 
 # 设置 SQLAlchemy 的日志级别为 ERROR
+
 logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
 
 # 创建日志记录器并设置级别为 INFO
@@ -187,7 +190,7 @@ def process_kline(data):
                 state = order['info']['state']
                 if state == 'filled':
                     logger.info(f"买入订单已成交-symbol:{record.symbol}-order_id:{record.buy_order_id}")
-                    record.buy_amount = float(order['info']['fillSz'])
+                    record.buy_amount = float(order['info']['accFillSz'])
                     record.buy_price = float(order['info']['avgPx'])
                     record.buy_fee = float(order['info']['fee'])
                     record.position_amount = record.buy_amount + record.buy_fee
@@ -301,16 +304,15 @@ def process_kline(data):
                                     spot_grid_1.sell_fee = 0
                                     spot_grid_1.buy_order_id = symbol[:-5] + data['data'][0]['ts']
                                     session.add(spot_grid_1)
-                                    spot_record = session.query(Spot).filter_by(symbol=symbol, buy_state=1,
-                                                                                sell_state=None).first()
+                                    spot_record = session.query(Spot).filter_by(symbol=symbol).first()
                                     order = place_spot_order_okx_test(symbol[:-5], 'long', mark_price,
                                                                       base_amount=spot_record.all_buy_amount,
-                                                                      cl_order_id=spot_grid.buy_order_id)
+                                                                      cl_order_id=spot_grid_1.buy_order_id)
                                     logger.info(order)
                                     if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
-                                        f":thumbs_up: 新买入订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
+                                        f":thumbs_up: 新买入订单-symbol:{spot_grid_1.symbol}-order_id:{spot_grid_1.buy_order_id}")
                         else:
                             # 查询均价
                             spot_record = session.query(Spot).filter_by(symbol=symbol).first()
@@ -356,17 +358,15 @@ def process_kline(data):
                                                                                 sell_state=None).first()
                                     order = place_spot_order_okx_test(symbol[:-5], 'long', mark_price,
                                                                       base_amount=spot_record.all_buy_amount,
-                                                                      cl_order_id=spot_grid.buy_order_id)
+                                                                      cl_order_id=spot_grid_1.buy_order_id)
                                     logger.info(order)
                                     if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
-                                        f":thumbs_up: 新买入订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
-
+                                        f":thumbs_up: 新买入订单-symbol:{spot_grid_1.symbol}-order_id:{spot_grid_1.buy_order_id}")
                         else:
                             # 查询均价
-                            spot_record = session.query(Spot).filter_by(symbol=symbol, buy_state=1,
-                                                                        sell_state=None).first()
+                            spot_record = session.query(Spot).filter_by(symbol=symbol).first()
                             if mark_price < spot_record.avg_buy_price * (1 - 0.07):  # 如果当前没有记录，且降幅超过7%，则准备另开一仓
                                 record.down_price = mark_price
                     else:
@@ -410,17 +410,16 @@ def process_kline(data):
                                                                                 sell_state=None).first()
                                     order = place_spot_order_okx_test(symbol[:-5], 'long', mark_price,
                                                                       base_amount=spot_record.all_buy_amount,
-                                                                      cl_order_id=spot_grid.buy_order_id)
+                                                                      cl_order_id=spot_grid_1.buy_order_id)
                                     logger.info(order)
                                     if not order or order['info']['sCode'] != '0':
                                         return
                                     logger.info(
-                                        f":thumbs_up: 新买入订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
+                                        f":thumbs_up: 新买入订单-symbol:{spot_grid_1.symbol}-order_id:{spot_grid_1.buy_order_id}")
 
                         else:
                             # 查询均价
-                            spot_record = session.query(Spot).filter_by(symbol=symbol, buy_state=1,
-                                                                        sell_state=None).first()
+                            spot_record = session.query(Spot).filter_by(symbol=symbol).first()
                             if mark_price < spot_record.avg_buy_price * (1 - 0.07):  # 如果当前没有记录，且降幅超过7%，则准备另开一仓
                                 record.down_price = mark_price
                     else:
@@ -480,11 +479,22 @@ async def main():
                         dict(channel='tickers', instId="ETH-USDT"),
                         dict(channel='tickers', instId="BTC-USDT"),
                         dict(channel='tickers', instId="BNB-USDT"),
+                        dict(channel='tickers', instId="ADA-USDT"),
                         dict(channel='tickers', instId="DOGE-USDT"),
                         dict(channel='tickers', instId="MATIC-USDT"),
                         dict(channel='tickers', instId="SOL-USDT"),
+                        dict(channel='tickers', instId="DOT-USDT"),
+                        dict(channel='tickers', instId="OP-USDT"),
+                        dict(channel='tickers', instId="ARB-USDT"),
+                        dict(channel='tickers', instId="FIL-USDT"),
+                        # dict(channel='tickers', instId="STRK-USDT"),
+                        dict(channel='tickers', instId="AVAX-USDT"),
+                        dict(channel='tickers', instId="NEAR-USDT"),
+                        # dict(channel='tickers', instId="UNI-USDT"),
                         dict(channel='tickers', instId="SUI-USDT"),
-                        # dict(channel='tickers', instId="ATOM-USDT"),
+                        dict(channel='tickers', instId="LTC-USDT"),
+                        # dict(channel='tickers', instId="AGIX-USDT"),
+                        dict(channel='tickers', instId="SATS-USDT"),
                         dict(channel='tickers', instId="LINK-USDT"),
                         dict(channel='tickers', instId="SHIB-USDT"),
                     ]
