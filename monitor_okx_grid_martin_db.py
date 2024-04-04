@@ -5,12 +5,13 @@ import sqlalchemy
 from ccxt.base.errors import OrderNotFound
 import json
 from datetime import datetime
-from exchange import place_spot_order_okx_test, get_spot_order_okx_test, cancel_spot_order_okx_test
+from exchange import place_spot_order_okx_test, get_spot_order_okx_test, cancel_spot_order_okx_test,get_market_info
 from websockets.exceptions import ConnectionClosedError
 import websockets
 import logging
 import asyncio
 from logging.handlers import TimedRotatingFileHandler
+from decimal import Decimal, ROUND_DOWN
 #todo 订单部分成交1h其余还未成交
 #todo btc订单buy amount数量不对
 
@@ -53,7 +54,8 @@ class SpotGrid(Base):
     up_price = Column(Float(10))
     sell_price = Column(Float(10))
     buy_amount = Column(Float(10))  # 买入数量
-    position_amount = Column(Float(10))  # 实际持仓数量（扣除手续费）
+    position_amount = Column(Float(10))  # 实际持仓数量（扣除买入手续费）
+    sell_amount = Column(Float(10)) # 卖出数量
     buy_state = Column(Integer())  # null为买入未成交 1成交
     sell_state = Column(Integer())  # null 未卖出 0为卖出未成交 1成交
     buy_fee = Column(Float(10))
@@ -69,7 +71,7 @@ class Spot(Base):
     __tablename__ = 'spot'
     id = Column(Integer(), primary_key=True, autoincrement=True)
     symbol = Column(String(20))
-    all_buy_amount = Column(Float(10))  # 开仓时加 平仓时减
+    all_position_amount = Column(Float(10))  # 开仓时加 平仓时减
     avg_buy_price = Column(Float(10))  # 开仓平仓时重新计算 所有未平仓价格*数量/所有数量
     all_value = Column(Float(10))  #
     all_realized_profit = Column(Float(10))  # 所有仓位已实现所获利润   平仓时计算
@@ -85,6 +87,10 @@ def get_session():
     session = sessionmaker(bind=engine)
     return session()
 
+
+# def align_precision(a, symbol):
+#     a_with_precision = Decimal(a).quantize(Decimal(str(precision_map.get(symbol))), rounding=ROUND_DOWN)
+#     return a_with_precision
 
 def process_kline(data):
     event_time = datetime.fromtimestamp(int(data['data'][0]['ts']) / 1000.0)
@@ -117,7 +123,7 @@ def process_kline(data):
         if not spot_record:
             spot = Spot()
             spot.symbol = symbol
-            spot.all_buy_amount = 0
+            spot.all_position_amount = 0
             spot.avg_buy_price = 0
             spot.all_value = 0
             spot.all_realized_profit = 0
@@ -134,31 +140,32 @@ def process_kline(data):
                 state = order['info']['state']
                 if state == 'filled':
                     logger.info(f'卖出订单已成交-symbol:{record.symbol}-order_id:{record.sell_order_id}', )
+                    record.sell_amount= float(order['info']['accFillSz'])
                     record.sell_price = float(order['info']['avgPx'])
                     record.sell_fee = float(order['info']['fee'])
-                    record.realized_profit = (
-                                                     record.sell_price - record.buy_price) * record.position_amount - record.sell_fee
+                    record.realized_profit = (record.sell_price - record.buy_price) * record.sell_amount + record.sell_fee
                     record.sell_state = 1
                     session.commit()
                     spot_record = session.query(Spot).filter_by(symbol=symbol).first()
                     # 计算统计表
                     spot_grid_records = session.query(SpotGrid).filter_by(symbol=symbol).all()
                     all_value = 0
-                    all_buy_amount = 0
+                    all_position_amount = 0
                     all_realized_profit = 0
                     all_buy_fee = 0
                     all_sell_fee = 0
                     for spot_grid_record in spot_grid_records:
                         if spot_grid_record.buy_state == 1 and not spot_grid_record.sell_state:  # 开仓
-                            all_buy_amount += spot_grid_record.buy_amount
-                            all_value += spot_grid_record.buy_amount * spot_grid_record.buy_price
+                            all_position_amount += spot_grid_record.position_amount
+                            all_value += spot_grid_record.position_amount * spot_grid_record.buy_price
 
                         if spot_grid_record.sell_state == 1:  # 已平仓
                             all_realized_profit += spot_grid_record.realized_profit
+                            all_sell_fee += spot_grid_record.sell_fee
                     spot_record.all_value = all_value
-                    spot_record.all_buy_amount = all_buy_amount
-                    spot_record.avg_buy_price = (all_value / all_buy_amount) if all_buy_amount != 0 else 0
-                    spot_record.all_unrealized_profit = spot_record.all_buy_amount * (
+                    spot_record.all_position_amount = all_position_amount
+                    spot_record.avg_buy_price = (all_value / all_position_amount) if all_position_amount != 0 else 0
+                    spot_record.all_unrealized_profit = spot_record.all_position_amount * (
                             mark_price - spot_record.avg_buy_price)
                     spot_record.all_realized_profit = all_realized_profit
                     spot_record.all_sell_fee = all_sell_fee
@@ -193,31 +200,30 @@ def process_kline(data):
                     record.buy_amount = float(order['info']['accFillSz'])
                     record.buy_price = float(order['info']['avgPx'])
                     record.buy_fee = float(order['info']['fee'])
-                    record.position_amount = record.buy_amount + record.buy_fee
+                    # record.position_amount = align_precision(record.buy_amount + record.buy_fee,symbol)
+                    record.position_amount =record.buy_amount + record.buy_fee
                     record.buy_state = 1
                     session.commit()
                     spot_record = session.query(Spot).filter_by(symbol=symbol).first()
                     # 计算统计表
                     spot_grid_records = session.query(SpotGrid).filter_by(symbol=symbol).all()
                     all_value = 0
-                    all_buy_amount = 0
                     all_position_amount = 0
                     all_realized_profit = 0
                     all_buy_fee = 0
                     all_sell_fee = 0
                     for spot_grid_record in spot_grid_records:
                         if spot_grid_record.buy_state == 1 and not spot_grid_record.sell_state:  # 开仓
-                            all_buy_amount += spot_grid_record.buy_amount
                             all_position_amount += spot_grid_record.position_amount
-                            all_value += spot_grid_record.buy_amount * spot_grid_record.buy_price
+                            all_value += spot_grid_record.position_amount * spot_grid_record.buy_price
                             all_buy_fee += spot_grid_record.buy_fee * spot_grid_record.buy_price
 
                         if spot_grid_record.sell_state == 1:  # 已平仓
                             all_realized_profit += spot_grid_record.realized_profit
                             all_sell_fee += spot_grid_record.sell_fee
                     spot_record.all_value = all_value
-                    spot_record.all_buy_amount = all_buy_amount
-                    spot_record.avg_buy_price = all_value / all_buy_amount
+                    spot_record.all_position_amount = all_position_amount
+                    spot_record.avg_buy_price = all_value / all_position_amount
                     spot_record.all_unrealized_profit = all_position_amount * (
                             mark_price - spot_record.avg_buy_price)
                     spot_record.all_buy_fee = all_buy_fee
@@ -306,7 +312,7 @@ def process_kline(data):
                                     session.add(spot_grid_1)
                                     spot_record = session.query(Spot).filter_by(symbol=symbol).first()
                                     order = place_spot_order_okx_test(symbol[:-5], 'long', mark_price,
-                                                                      base_amount=spot_record.all_buy_amount,
+                                                                      base_amount=spot_record.all_position_amount,
                                                                       cl_order_id=spot_grid_1.buy_order_id)
                                     logger.info(order)
                                     if not order or order['info']['sCode'] != '0':
@@ -357,7 +363,7 @@ def process_kline(data):
                                     spot_record = session.query(Spot).filter_by(symbol=symbol, buy_state=1,
                                                                                 sell_state=None).first()
                                     order = place_spot_order_okx_test(symbol[:-5], 'long', mark_price,
-                                                                      base_amount=spot_record.all_buy_amount,
+                                                                      base_amount=spot_record.all_position_amount,
                                                                       cl_order_id=spot_grid_1.buy_order_id)
                                     logger.info(order)
                                     if not order or order['info']['sCode'] != '0':
@@ -409,7 +415,7 @@ def process_kline(data):
                                     spot_record = session.query(Spot).filter_by(symbol=symbol, buy_state=1,
                                                                                 sell_state=None).first()
                                     order = place_spot_order_okx_test(symbol[:-5], 'long', mark_price,
-                                                                      base_amount=spot_record.all_buy_amount,
+                                                                      base_amount=spot_record.all_position_amount,
                                                                       cl_order_id=spot_grid_1.buy_order_id)
                                     logger.info(order)
                                     if not order or order['info']['sCode'] != '0':
@@ -464,11 +470,36 @@ def process_kline(data):
         session.commit()
         session.close()
 
-
+market_map={}
 async def main():
-    max_retries = 3
-    retries = 0
     connected = False
+    symbols = [
+        "ETH-USDT",
+        "BTC-USDT",
+        "BNB-USDT",
+        "ADA-USDT",
+        "DOGE-USDT",
+        "MATIC-USDT",
+        "SOL-USDT",
+        "DOT-USDT",
+        "OP-USDT",
+        "ARB-USDT",
+        "FIL-USDT",
+        "AVAX-USDT",
+        "NEAR-USDT",
+        "SUI-USDT",
+        "LTC-USDT",
+        "SATS-USDT",
+        "LINK-USDT",
+        "SHIB-USDT",
+    ]
+
+    # argslist = []
+    #
+    # for symbol in symbols:
+    #     argslist.append(dict(channel='tickers', instId=symbol))
+    #     # precision_map[symbol] = get_market_info(symbol)['precision']['amount']
+    #     market_map[symbol] = get_market_info(symbol)
     while not connected:
         try:
             url = "wss://wspap.okx.com:8443/ws/v5/public?brokerId=9999"
@@ -487,13 +518,12 @@ async def main():
                         dict(channel='tickers', instId="OP-USDT"),
                         dict(channel='tickers', instId="ARB-USDT"),
                         dict(channel='tickers', instId="FIL-USDT"),
-                        # dict(channel='tickers', instId="STRK-USDT"),
+                        dict(channel='tickers', instId="BCH-USDT"),
                         dict(channel='tickers', instId="AVAX-USDT"),
                         dict(channel='tickers', instId="NEAR-USDT"),
-                        # dict(channel='tickers', instId="UNI-USDT"),
                         dict(channel='tickers', instId="SUI-USDT"),
                         dict(channel='tickers', instId="LTC-USDT"),
-                        # dict(channel='tickers', instId="AGIX-USDT"),
+
                         dict(channel='tickers', instId="SATS-USDT"),
                         dict(channel='tickers', instId="LINK-USDT"),
                         dict(channel='tickers', instId="SHIB-USDT"),

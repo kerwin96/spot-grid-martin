@@ -16,14 +16,12 @@ with open(r'acc.json', 'r') as file:
     okx.httpsProxy = 'http://127.0.0.1:7890/'
 
 
-
-
 def get_spot_order_okx_test(symbol, cl_order_id=None):
     try:
         okx.set_sandbox_mode(True)  # demo-trading
         contract = symbol.upper() + "/USDT"
 
-        order = okx.fetch_order(id=None,symbol=contract,params={'clOrdId':cl_order_id})
+        order = okx.fetch_order(id=None, symbol=contract, params={'clOrdId': cl_order_id})
         print(order)
         return order
 
@@ -31,7 +29,7 @@ def get_spot_order_okx_test(symbol, cl_order_id=None):
         traceback.print_exception(e)
 
 
-def place_spot_order_okx_test(symbol, action, price, quota_amount=None, base_amount=None,cl_order_id=None):
+def place_spot_order_okx_test(symbol, action, price, quota_amount=None, base_amount=None, cl_order_id=None):
     try:
         okx.set_sandbox_mode(True)  # demo-trading
         contract = symbol.upper() + "/USDT"
@@ -53,17 +51,18 @@ def place_spot_order_okx_test(symbol, action, price, quota_amount=None, base_amo
             # take_profit_price = price*1.1
             # print(take_profit_price)
             # order = okx.create_order(contract, 'limit', 'buy', 0.001,price=3200.0)
-            order = okx.create_order(contract, 'limit', 'buy', amount, price=price, params={'tgtCcy': 'quote-ccy','clOrdId':cl_order_id})
+            order = okx.create_order(contract, 'limit', 'buy', amount, price=price,
+                                     params={'tgtCcy': 'quote-ccy', 'clOrdId': cl_order_id})
             # tp_order = okx.create_order(contract, 'limit', 'sell', amount, price, {'takeProfitPrice': take_profit_price,  "posSide": "long"})
             # sl_order = okx.create_order(contract, 'limit', 'sell', amount, price, {'stopLossPrice': stop_loss_price,  "posSide": "long"})
 
             # print(order)
-
+            return order
         elif action == 'short':
             order = okx.create_order(contract, 'limit', 'sell', amount, price=price,
-                                     params={'tgtCcy': 'quote-ccy','clOrdId':cl_order_id})
+                                     params={'tgtCcy': 'quote-ccy', 'clOrdId': cl_order_id})
             # print(order)
-        return order
+            return order
 
     except Exception as e:
         traceback.print_exception(e)
@@ -72,7 +71,7 @@ def place_spot_order_okx_test(symbol, action, price, quota_amount=None, base_amo
 def cancel_spot_order_okx_test(symbol, cl_order_id=None):
     okx.set_sandbox_mode(True)  # demo-trading
     contract = symbol.upper() + "/USDT"
-    order = okx.cancel_order(id=None,symbol=contract, params={'clOrdId':cl_order_id})
+    order = okx.cancel_order(id=None, symbol=contract, params={'clOrdId': cl_order_id})
     return order
 
 
@@ -126,6 +125,11 @@ def close_order_okx_test(symbol, action):
     return order
 
 
+def get_spot_position_amount(symbol):
+    okx.set_sandbox_mode(True)
+    contract = symbol.upper()
+    return okx.fetch_balance()
+
 def get_spot_amount_from_usdt_okx(symbol, usdt_amount):
     okx.set_sandbox_mode(True)
     contract = symbol.upper() + "/USDT"
@@ -148,9 +152,34 @@ def get_spot_amount_from_usdt_okx(symbol, usdt_amount):
     return amount, price
 
 
+def get_market_info(symbol):
+    okx.set_sandbox_mode(True)
+    contract = symbol.upper().replace("-","/")
+    print(contract)
+    markets = okx.load_markets()
+    # price = (okx.fetch_ticker(contract))['close']
+    # coin_amount = usdt_amount / price
+    # print(coin_amount)
+    # return coin_amount
+
+    market = okx.market(contract)
+    # contract_size = market['contractSize']
+
+    # print("market",market)
+
+    # amount = round_decimal_up(usdt_amount / price, precision)
+    # print(amount)
+    # notional = market['info']['filters'][5]['notional']
+    # notional_amount = round_decimal_up(float(notional) / price, precision)
+    # amount = max(notional_amount, amount)
+    # amount = int(usdt_amount / (contract_size * price))
+    return market
+
+
 def get_amount_from_usdt_okx(symbol, usdt_amount):
     okx.set_sandbox_mode(True)
     contract = symbol.upper() + "/USDT:USDT"
+    print(contract)
     price = (okx.fetch_ticker(contract))['close']
     coin_amount = usdt_amount / price
     # print(coin_amount)
@@ -217,6 +246,9 @@ def get_today_realized_profit_okx(symbol):
 
 
 # place_order_binance_test('BTCUSDT','long')
+print(place_spot_order_okx_test('BTC', 'buy', 71000,quota_amount=0.0001689))
 
 # print(place_spot_order_okx_test('BTC', 'short', 71000,quota_amount=0.0001689))
-get_spot_order_okx_test('SHIB','SHIB1711497921182')
+# get_spot_order_okx_test('DOGE', 'DOGE1712202924361')
+# print(get_market_info('eth'))
+print(get_spot_position_amount('BCH'))
