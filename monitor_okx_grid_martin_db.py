@@ -514,7 +514,7 @@ async def main():
                         dict(channel='tickers', instId="DOGE-USDT"),
                         dict(channel='tickers', instId="MATIC-USDT"),
                         dict(channel='tickers', instId="SOL-USDT"),
-                        dict(channel='tickers', instId="DOT-USDT"),
+                        # dict(channel='tickers', instId="DOT-USDT"),
                         dict(channel='tickers', instId="OP-USDT"),
                         dict(channel='tickers', instId="ARB-USDT"),
                         dict(channel='tickers', instId="FIL-USDT"),
