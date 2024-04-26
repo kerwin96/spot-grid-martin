@@ -15,13 +15,18 @@ with open(r'acc.json', 'r') as file:
     })
     okx.httpsProxy = 'http://127.0.0.1:7890/'
 
+    binance =ccxt.binance
+
 
 def get_spot_order_okx_test(symbol, cl_order_id=None):
     try:
         okx.set_sandbox_mode(True)  # demo-trading
         contract = symbol.upper() + "/USDT"
+
         order = okx.fetch_order(id=None, symbol=contract, params={'clOrdId': cl_order_id})
+        print(order)
         return order
+
     except Exception as e:
         traceback.print_exception(e)
 

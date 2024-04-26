@@ -12,10 +12,12 @@ import logging
 import asyncio
 from logging.handlers import TimedRotatingFileHandler
 from decimal import Decimal, ROUND_DOWN
-#todo 订单部分成交1h其余还未成交
-#todo btc订单buy amount数量不对
+
 
 # 设置 SQLAlchemy 的日志级别为 ERROR
+#todo 待解决问题：订单下了很多，但是数据库记录不变,是不是数据库插入记录时出错了，导致一直在卖
+#todo 待解决问题：订单不存在，订单撤销了，但是数据库记录没变，根本问题就是数据库记录和行为不一致
+#todo 待解决问题：订单部分成交，长时间不能撤销
 
 logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
 
@@ -24,7 +26,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # 创建文件处理程序并设置级别为 INFO
-file_handler = TimedRotatingFileHandler('spot-grid-martin.log', when='midnight', interval=1, backupCount=1,
+file_handler = TimedRotatingFileHandler('spot-grid-martin', when='midnight', interval=1, backupCount=30,
                                         encoding='utf-8')
 console_handler = logging.StreamHandler()
 # 创建格式化器
@@ -39,7 +41,7 @@ Base = sqlalchemy.orm.declarative_base()
 path = 'crypto.db'
 # 创建数据库引擎和会话
 engine = create_engine(f'sqlite:///{path}', echo=False, pool_size=10)
-quota_amount = 12
+quota_amount = 20
 executor = None
 
 
@@ -65,6 +67,9 @@ class SpotGrid(Base):
     realized_profit = Column(Float(10))  # 该仓位已实现所获利润
     buy_time = Column(DateTime)
     sell_time = Column(DateTime)
+    after_buy_balance = Column(Float(10))#买后的余额
+    after_sell_balance = Column(Float(10))#卖后的余额
+
 
 
 class Spot(Base):
@@ -162,6 +167,7 @@ def process_kline(data):
                         if spot_grid_record.sell_state == 1:  # 已平仓
                             all_realized_profit += spot_grid_record.realized_profit
                             all_sell_fee += spot_grid_record.sell_fee
+                    record.after_sell_balance=all_position_amount
                     spot_record.all_value = all_value
                     spot_record.all_position_amount = all_position_amount
                     spot_record.avg_buy_price = (all_value / all_position_amount) if all_position_amount != 0 else 0
@@ -221,6 +227,7 @@ def process_kline(data):
                         if spot_grid_record.sell_state == 1:  # 已平仓
                             all_realized_profit += spot_grid_record.realized_profit
                             all_sell_fee += spot_grid_record.sell_fee
+                    record.after_buy_balance = all_position_amount
                     spot_record.all_value = all_value
                     spot_record.all_position_amount = all_position_amount
                     spot_record.avg_buy_price = all_value / all_position_amount
@@ -510,22 +517,22 @@ async def main():
                         dict(channel='tickers', instId="ETH-USDT"),
                         dict(channel='tickers', instId="BTC-USDT"),
                         dict(channel='tickers', instId="BNB-USDT"),
-                        dict(channel='tickers', instId="ADA-USDT"),
+                        # dict(channel='tickers', instId="ADA-USDT"),
                         dict(channel='tickers', instId="DOGE-USDT"),
-                        dict(channel='tickers', instId="MATIC-USDT"),
+                        # dict(channel='tickers', instId="MATIC-USDT"),
                         dict(channel='tickers', instId="SOL-USDT"),
                         # dict(channel='tickers', instId="DOT-USDT"),
-                        dict(channel='tickers', instId="OP-USDT"),
+                        # dict(channel='tickers', instId="OP-USDT"),
                         dict(channel='tickers', instId="ARB-USDT"),
-                        dict(channel='tickers', instId="FIL-USDT"),
+                        # dict(channel='tickers', instId="FIL-USDT"),
                         dict(channel='tickers', instId="BCH-USDT"),
-                        dict(channel='tickers', instId="AVAX-USDT"),
-                        dict(channel='tickers', instId="NEAR-USDT"),
+                        # dict(channel='tickers', instId="AVAX-USDT"),
+                        # dict(channel='tickers', instId="NEAR-USDT"),
                         dict(channel='tickers', instId="SUI-USDT"),
                         dict(channel='tickers', instId="LTC-USDT"),
 
-                        dict(channel='tickers', instId="SATS-USDT"),
-                        dict(channel='tickers', instId="LINK-USDT"),
+                        # dict(channel='tickers', instId="SATS-USDT"),
+                        # dict(channel='tickers', instId="LINK-USDT"),
                         dict(channel='tickers', instId="SHIB-USDT"),
                     ]
                 )
