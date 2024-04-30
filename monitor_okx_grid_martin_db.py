@@ -5,7 +5,7 @@ import sqlalchemy
 from ccxt.base.errors import OrderNotFound
 import json
 from datetime import datetime
-from exchange import place_spot_order_okx_test, get_spot_order_okx_test, cancel_spot_order_okx_test,get_market_info
+from exchange import place_spot_order_okx_test, get_spot_order_okx_test, cancel_spot_order_okx_test, get_market_info
 from websockets.exceptions import ConnectionClosedError
 import websockets
 import logging
@@ -13,11 +13,10 @@ import asyncio
 from logging.handlers import TimedRotatingFileHandler
 from decimal import Decimal, ROUND_DOWN
 
-
 # 设置 SQLAlchemy 的日志级别为 ERROR
-#todo 待解决问题：订单下了很多，但是数据库记录不变,是不是数据库插入记录时出错了，导致一直在卖
-#todo 待解决问题：订单不存在，订单撤销了，但是数据库记录没变，根本问题就是数据库记录和行为不一致
-#todo 待解决问题：订单部分成交，长时间不能撤销
+# todo 待解决问题：订单下了很多，但是数据库记录不变,是不是数据库插入记录时出错了，导致一直在卖
+# todo 待解决问题：订单不存在，订单撤销了，但是数据库记录没变，根本问题就是数据库记录和行为不一致
+# todo 待解决问题：订单部分成交，长时间不能撤销
 
 logging.getLogger('sqlalchemy.engine').setLevel(logging.ERROR)
 
@@ -57,9 +56,9 @@ class SpotGrid(Base):
     sell_price = Column(Float(10))
     buy_amount = Column(Float(10))  # 买入数量
     position_amount = Column(Float(10))  # 实际持仓数量（扣除买入手续费）
-    sell_amount = Column(Float(10)) # 卖出数量
-    buy_state = Column(Integer())  # null为买入未成交 1成交
-    sell_state = Column(Integer())  # null 未卖出 0为卖出未成交 1成交
+    sell_amount = Column(Float(10))  # 卖出数量
+    buy_state = Column(Integer())  # null为买入未成交 1成交 2未成交超时取消中
+    sell_state = Column(Integer())  # null 未卖出 0为卖出未成交 1成交 2未成交超时取消中
     buy_fee = Column(Float(10))
     sell_fee = Column(Float(10))
     buy_order_id = Column(String(20))
@@ -67,9 +66,8 @@ class SpotGrid(Base):
     realized_profit = Column(Float(10))  # 该仓位已实现所获利润
     buy_time = Column(DateTime)
     sell_time = Column(DateTime)
-    after_buy_balance = Column(Float(10))#买后的余额
-    after_sell_balance = Column(Float(10))#卖后的余额
-
+    after_buy_balance = Column(Float(10))  # 买后的余额
+    after_sell_balance = Column(Float(10))  # 卖后的余额
 
 
 class Spot(Base):
@@ -140,15 +138,16 @@ def process_kline(data):
 
 
         elif record:
-            if record.sell_state == 0:  # 卖出未成交
+            if record.sell_state == 0 or record.sell_state == 2:  # 卖出未成交
                 order = get_spot_order_okx_test(symbol[:-5], record.sell_order_id)
                 state = order['info']['state']
                 if state == 'filled':
                     logger.info(f'卖出订单已成交-symbol:{record.symbol}-order_id:{record.sell_order_id}', )
-                    record.sell_amount= float(order['info']['accFillSz'])
+                    record.sell_amount = float(order['info']['accFillSz'])
                     record.sell_price = float(order['info']['avgPx'])
                     record.sell_fee = float(order['info']['fee'])
-                    record.realized_profit = (record.sell_price - record.buy_price) * record.sell_amount + record.sell_fee
+                    record.realized_profit = (
+                                                     record.sell_price - record.buy_price) * record.sell_amount + record.sell_fee
                     record.sell_state = 1
                     session.commit()
                     spot_record = session.query(Spot).filter_by(symbol=symbol).first()
@@ -167,7 +166,7 @@ def process_kline(data):
                         if spot_grid_record.sell_state == 1:  # 已平仓
                             all_realized_profit += spot_grid_record.realized_profit
                             all_sell_fee += spot_grid_record.sell_fee
-                    record.after_sell_balance=all_position_amount
+                    record.after_sell_balance = all_position_amount
                     spot_record.all_value = all_value
                     spot_record.all_position_amount = all_position_amount
                     spot_record.avg_buy_price = (all_value / all_position_amount) if all_position_amount != 0 else 0
@@ -178,16 +177,22 @@ def process_kline(data):
                 else:
                     if state == 'partially_filled':
                         pass
+                    elif state == 'canceled':
+                        record.sell_state = None
+                        logger.info(
+                            f'取消卖出订单成功-symbol:{record.symbol}-order_id:{record.sell_order_id}', )
                     else:
                         # 是否超时，如果超时，撤销执行
                         time_difference = (datetime.now() - record.buy_time).total_seconds()
                         if time_difference > 30:
                             # 撤销限价单，删除订单
                             try:
-                                cancel_spot_order_okx_test(symbol[:-5], record.sell_order_id)
-                                record.sell_state = None
+                                cancel_order = cancel_spot_order_okx_test(symbol[:-5], record.sell_order_id)
+
+                                if cancel_order['info']['Scode'] == 0:
+                                    record.sell_state = 2
                                 logger.info(
-                                    f'卖出订单超时未成交,取消订单-symbol:{record.symbol}-order_id:{record.sell_order_id}', )
+                                    f'卖出订单超时未成交,取消订单开始-symbol:{record.symbol}-order_id:{record.sell_order_id}-{cancel_order}', )
 
                             except OrderNotFound:
                                 pass
@@ -198,7 +203,7 @@ def process_kline(data):
                 session.close()
                 return
 
-            if not record.buy_state:  # 买入未成交
+            if not record.buy_state:  #买入未成交（包括取消订单未确定）
                 order = get_spot_order_okx_test(symbol[:-5], record.buy_order_id)
                 state = order['info']['state']
                 if state == 'filled':
@@ -207,7 +212,7 @@ def process_kline(data):
                     record.buy_price = float(order['info']['avgPx'])
                     record.buy_fee = float(order['info']['fee'])
                     # record.position_amount = align_precision(record.buy_amount + record.buy_fee,symbol)
-                    record.position_amount =record.buy_amount + record.buy_fee
+                    record.position_amount = record.buy_amount + record.buy_fee
                     record.buy_state = 1
                     session.commit()
                     spot_record = session.query(Spot).filter_by(symbol=symbol).first()
@@ -238,16 +243,22 @@ def process_kline(data):
                 else:
                     if state == 'partially_filled':
                         pass
+                    elif state == 'canceled':
+                        logger.info(
+                            f'取消买入订单成功-symbol:{record.symbol}-order_id:{record.buy_order_id}', )
+                        session.delete(record)
                     else:
                         # 是否超时，如果超时，撤销执行
                         time_difference = (datetime.now() - record.buy_time).total_seconds()
                         if time_difference > 30:
                             # 撤销限价单，删除订单
                             try:
-                                cancel_spot_order_okx_test(symbol[:-5], record.buy_order_id)
-                                logger.info(
-                                    f"买入订单超时未成交,取消订单-symbol:{record.symbol}-order_id:{record.buy_order_id}")
-                                session.delete(record)
+                                cancel_order = cancel_spot_order_okx_test(symbol[:-5], record.buy_order_id)
+                                if cancel_order['info']['Scode'] == 0:
+                                    record.buy_state = 2
+                                    logger.info(
+                                        f"买入订单超时未成交,取消订单开始-symbol:{record.symbol}-order_id:{record.buy_order_id}-{cancel_order}")
+                                # session.delete(record)
                             except OrderNotFound:
                                 pass
                         else:
@@ -477,7 +488,10 @@ def process_kline(data):
         session.commit()
         session.close()
 
-market_map={}
+
+market_map = {}
+
+
 async def main():
     connected = False
     symbols = [
@@ -549,7 +563,6 @@ async def main():
             await main()
         except Exception as e:
             logger.error(e, exc_info=True)
-
 
 
 if __name__ == '__main__':
