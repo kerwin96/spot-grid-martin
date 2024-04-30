@@ -189,7 +189,7 @@ def process_kline(data):
                             try:
                                 cancel_order = cancel_spot_order_okx_test(symbol[:-5], record.sell_order_id)
 
-                                if cancel_order['info']['Scode'] == 0:
+                                if cancel_order['info']['sCode'] == 0:
                                     record.sell_state = 2
                                 logger.info(
                                     f'卖出订单超时未成交,取消订单开始-symbol:{record.symbol}-order_id:{record.sell_order_id}-{cancel_order}', )
@@ -254,7 +254,7 @@ def process_kline(data):
                             # 撤销限价单，删除订单
                             try:
                                 cancel_order = cancel_spot_order_okx_test(symbol[:-5], record.buy_order_id)
-                                if cancel_order['info']['Scode'] == 0:
+                                if cancel_order['info']['sCode'] == 0:
                                     record.buy_state = 2
                                     logger.info(
                                         f"买入订单超时未成交,取消订单开始-symbol:{record.symbol}-order_id:{record.buy_order_id}-{cancel_order}")

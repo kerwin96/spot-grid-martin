@@ -245,8 +245,8 @@ def get_today_realized_profit_okx(symbol):
 # place_order_binance_test('BTCUSDT','long')
 # print(place_spot_order_okx_test('BTC', 'long', 61000,base_amount=1,cl_order_id='BTC2343242342311'))
 
-# print(place_spot_order_okx_test('BTC', 'short', 64000,quota_amount=0.001,cl_order_id='BTC2343242342311'))
-print(get_spot_order_okx_test('BTC', 'BTC2343242342311'))
+# print(place_spot_order_okx_test('BTC', 'short', 65000,quota_amount=0.001,cl_order_id='BTC2343242342311'))
+# print(get_spot_order_okx_test('BTC', 'BTC2343242342311'))
 # print(cancel_spot_order_okx_test('btc','BTC2343242342311'))
 # print(get_market_info('eth'))
 # print(get_spot_position_amount('BCH'))
