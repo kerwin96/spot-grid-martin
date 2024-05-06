@@ -122,9 +122,8 @@ def close_order_okx_test(symbol, action):
     return order
 
 
-def get_spot_position_amount(symbol):
+def get_spot_position_amount():
     okx.set_sandbox_mode(True)
-    contract = symbol.upper()
     return okx.fetch_balance()
 
 def get_spot_amount_from_usdt_okx(symbol, usdt_amount):
@@ -172,6 +171,12 @@ def get_market_info(symbol):
     # amount = int(usdt_amount / (contract_size * price))
     return market
 
+
+
+def get_balance(symbol=None):
+    okx.set_sandbox_mode(True)
+
+    return okx.fetch_balance(symbol)
 
 def get_amount_from_usdt_okx(symbol, usdt_amount):
     okx.set_sandbox_mode(True)
@@ -248,5 +253,9 @@ def get_today_realized_profit_okx(symbol):
 # print(place_spot_order_okx_test('BTC', 'short', 65000,quota_amount=0.001,cl_order_id='BTC2343242342311'))
 # print(get_spot_order_okx_test('BTC', 'BTC2343242342311'))
 # print(cancel_spot_order_okx_test('btc','BTC2343242342311'))
-# print(get_market_info('eth'))
-# print(get_spot_position_amount('BCH'))
+# print(get_market_info('BTC/USDT'))
+# print(get_balance())
+
+# balance = get_spot_position_amount()
+
+# print(balance['total']['BTC'])
